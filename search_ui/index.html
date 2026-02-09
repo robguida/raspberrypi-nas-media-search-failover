@@ -1,0 +1,99 @@
+W<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>NAS Media Search</title>
+  <link rel="stylesheet" href="./leaflet/leaflet.css" />
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="title">NAS Media Search</div>
+    <div class="subtitle">Offline map + metadata search</div>
+  </header>
+
+  <main class="layout">
+    <section class="left">
+      <div class="card">
+        <h2>Map</h2>
+        <div class="hint">Click a country; nearest city (in your library) will be selected.</div>
+        <div id="map"></div>
+        <div class="mapSelection">
+          <div>Country: <span id="selCountry">—</span></div>
+          <div>City: <span id="selCity">—</span></div>
+          <button id="clearMap" class="secondary">Clear map selection</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Filters</h2>
+
+        <div class="grid2">
+          <label>
+            Country (type “It” → Italy)
+            <input id="countryInput" list="countryList" placeholder="Any" />
+            <datalist id="countryList"></datalist>
+          </label>
+
+          <label>
+            City (only from your library)
+            <input id="cityInput" list="cityList" placeholder="Any" />
+            <datalist id="cityList"></datalist>
+          </label>
+        </div>
+
+        <div class="grid2">
+          <label>
+            Camera
+            <input id="cameraInput" list="cameraList" placeholder="Any" />
+            <datalist id="cameraList"></datalist>
+          </label>
+
+          <label>
+            Media type
+            <select id="mediaType">
+              <option value="">Both</option>
+              <option value="image">Images</option>
+              <option value="video">Video</option>
+            </select>
+          </label>
+        </div>
+
+        <div class="grid2">
+          <label>From <input id="dateFrom" type="date"></label>
+          <label>To <input id="dateTo" type="date"></label>
+        </div>
+	<div class="filter-item filter-text hideme">
+	  <label>Text (filename/path)</label>
+	  <input id="q" type="text" placeholder="search text..." />
+	</div>
+        <div class="actions">
+          <button id="runSearch">Search</button>
+          <button id="reset" class="secondary">Reset</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="right">
+      <div class="card">
+        <div class="resultsHeader">
+          <h2>Results</h2>
+          <div class="resultsMeta"><span id="count">0</span> items</div>
+        </div>
+
+        <div id="results" class="resultsGrid"></div>
+
+        <div class="pager">
+          <button id="prev" class="secondary">Prev</button>
+          <span id="pageInfo"></span>
+          <button id="next" class="secondary">Next</button>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <script src="./leaflet/leaflet.js"></script>
+  <script src="./app.js"></script>
+</body>
+</html>

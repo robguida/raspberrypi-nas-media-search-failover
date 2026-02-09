@@ -1,0 +1,67 @@
+:root { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; }
+body { margin: 0; background: #f6f7f9; color: #111; }
+
+.topbar { padding: 14px 18px; background: #101827; color: #fff; display: flex; align-items: baseline; gap: 14px; }
+.title { font-size: 18px; font-weight: 700; }
+.subtitle { font-size: 13px; opacity: 0.85; }
+
+.layout { display: grid; grid-template-columns: 440px 1fr; gap: 14px; padding: 14px; }
+
+.card { background: #fff; border-radius: 14px; box-shadow: 0 1px 10px rgba(0,0,0,0.06); padding: 14px; margin-bottom: 14px; }
+h2 { margin: 0 0 10px 0; font-size: 16px; }
+label { display: block; font-size: 12px; margin-top: 10px; }
+input, select { width: 100%; margin-top: 6px; padding: 10px; border-radius: 10px; border: 1px solid #d9dce2; background: #fff; font-size: 13px; }
+
+.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.actions { display: flex; gap: 10px; margin-top: 12px; }
+button { border: 0; border-radius: 10px; padding: 10px 12px; cursor: pointer; background: #2563eb; color: #fff; font-weight: 600; }
+button.secondary { background: #e5e7eb; color: #111; }
+
+#map { height: 320px; border-radius: 12px; overflow: hidden; margin-top: 8px; }
+.hint { font-size: 12px; color: #444; }
+.mapSelection { margin-top: 10px; font-size: 13px; display: grid; gap: 6px; }
+
+.resultsHeader { display: flex; justify-content: space-between; align-items: baseline; }
+.resultsMeta { font-size: 12px; color: #444; }
+
+.resultsGrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px; margin-top: 12px; }
+
+.resultCard { border: 1px solid #eef0f4; border-radius: 14px; overflow: hidden; background: #fff; }
+.preview { width: 100%; height: 180px; object-fit: cover; background: #000; }
+.resultBody { padding: 10px; font-size: 13px; display: grid; gap: 4px; }
+a.resultTitle { color: inherit; text-decoration: none; font-weight: 700; }
+a.resultTitle:hover { text-decoration: underline; }
+.muted { color: #555; font-size: 12px; }
+.resultActions { display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-top:6px; }
+button.mini { padding: 6px 10px; border-radius: 10px; }
+.pager { display: flex; justify-content: center; align-items: center; gap: 12px; margin-top: 14px; }
+/* FILTER LAYOUT */
+#filters {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 10px;
+  align-items: end;
+}
+
+#filters .filter-item label {
+  display: block;
+  font-size: 12px;
+  margin-bottom: 4px;
+}
+
+#filters input,
+#filters select {
+  width: 100%;
+  max-width: 240px;  /* makes them shorter */
+  box-sizing: border-box;
+}
+
+#filters .filter-text {
+  grid-column: 1 / -1; /* make text filter span full width at the bottom */
+  max-width: 520px;
+}
+
+/* RESULTS: hide long path/filename lines (keep Copy Path button) */
+.hideme {
+display: none;
+}

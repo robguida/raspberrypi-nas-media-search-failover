@@ -1,0 +1,6 @@
+#!/srv/dev-disk-by-uuid-c8f195fd-35e1-449f-90cb-0633bf99bde2/appdata/media-index/.venv/bin/python3
+import sys
+from hupper.cli import main
+if __name__ == '__main__':
+    sys.argv[0] = sys.argv[0].removesuffix('.exe')
+    sys.exit(main())

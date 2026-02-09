@@ -14,8 +14,15 @@ let libraryCitiesByCountry = new Map();
 let selectedCountry = null;
 let selectedCity = null;
 
+const p = row.path;       // unix path from API
+const ext = row.ext?.toLowerCase();
+
+const SMB_HOST = "raspberrypi";              // or raspberrypi.local (Windows usually prefers just hostname)
+const SMB_SHARE = "CopyYourFilesHere";       // your SMB share name
+const UNIX_PREFIX = "/srv/mergerfs/MergedDrives/CopyYourFilesHere/"; // adjust if different
+
 function mediaUrl(path) {
-  return `/media?path=${encodeURIComponent(path)}`;
+  return `/preview?path=${encodeURIComponent(path)}`;
 }
 
 function isImage(ext) {
@@ -25,20 +32,6 @@ function isImage(ext) {
 function isVideo(ext) {
   return ["mp4","mov","m4v"].includes(ext);
 }
-
-const p = row.path;       // unix path from API
-const ext = row.ext?.toLowerCase();
-
-let previewHtml = "";
-if (isImage(ext)) {
-  previewHtml = `<img class="thumb" src="${mediaUrl(p)}" loading="lazy" />`;
-} else if (isVideo(ext)) {
-  previewHtml = `<video class="thumb" src="${mediaUrl(p)}" controls preload="metadata"></video>`;
-}
-
-const SMB_HOST = "raspberrypi";              // or raspberrypi.local (Windows usually prefers just hostname)
-const SMB_SHARE = "CopyYourFilesHere";       // your SMB share name
-const UNIX_PREFIX = "/srv/mergerfs/MergedDrives/CopyYourFilesHere/"; // adjust if different
 
 function toUncPath(unixPath) {
   // strip prefix
@@ -162,9 +155,12 @@ function renderResults(rows) {
     const downloadUrl = `/download?path=${encodePath(r.path)}`;
     const smb = smbLinkForPath(r.path);
 
-    const media = (r.media_type === "video")
-      ? `<video class="preview" controls preload="metadata" src="${previewUrl}"></video>`
-      : `<img class="preview" loading="lazy" src="${previewUrl}" alt="">`;
+    let media = "";
+    if (isImage(r.ext)) {
+      media = `<img class="preview" loading="lazy" src="${mediaUrl(r.path)}" alt="">`;
+    } else if (isVideo(r.ext)) {
+      media = `<video class="preview" controls preload="metadata" src="${mediaUrl(r.path)}"></video>`;
+    }
 
     const title = `<a class="resultTitle" href="${downloadUrl}" title="Download">${r.filename}</a>`;
     const smbLine = smb ? `<a class="muted" href="${smb}">Open via SMB</a>` : `<span class="muted">SMB link not derivable</span>`;

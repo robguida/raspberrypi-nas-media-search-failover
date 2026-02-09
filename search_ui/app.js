@@ -97,7 +97,10 @@ function setCityDatalistForCountry(country) {
 
 function asISODateStart(d) { return d ? `${d}T00:00:00` : ""; }
 function asISODateEnd(d)   { return d ? `${d}T23:59:59` : ""; }
-function encodePath(p){ return encodeURIComponent(p); }
+function encodePath(p) {
+  // keep slashes unescaped so nginx sees /srv/mergerfs/... not %2F...
+  return encodeURIComponent(p).replaceAll("%2F", "/");
+}
 
 function buildSearchUrl(page) {
   const params = new URLSearchParams();

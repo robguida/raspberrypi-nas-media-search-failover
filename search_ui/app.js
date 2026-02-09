@@ -52,7 +52,7 @@ function fillDatalist(datalistEl, values) {// add near your routes
   import fs from "fs";
   import path from "path";
 
-  app.get("/media", (req, res) => {
+  app.get("/preview", (req, res) => {
     const p = req.query.path;
     if (!p || typeof p !== "string") return res.status(400).send("missing path");
 

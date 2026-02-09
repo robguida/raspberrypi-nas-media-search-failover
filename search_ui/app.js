@@ -14,6 +14,39 @@ let libraryCitiesByCountry = new Map();
 let selectedCountry = null;
 let selectedCity = null;
 
+function mediaUrl(path) {
+  return `/media?path=${encodeURIComponent(path)}`;
+}
+
+function isImage(ext) {
+  return ["jpg","jpeg","png","webp","gif"].includes(ext);
+}
+
+function isVideo(ext) {
+  return ["mp4","mov","m4v"].includes(ext);
+}
+
+const p = row.path;       // unix path from API
+const ext = row.ext?.toLowerCase();
+
+let previewHtml = "";
+if (isImage(ext)) {
+  previewHtml = `<img class="thumb" src="${mediaUrl(p)}" loading="lazy" />`;
+} else if (isVideo(ext)) {
+  previewHtml = `<video class="thumb" src="${mediaUrl(p)}" controls preload="metadata"></video>`;
+}
+
+const SMB_HOST = "raspberrypi";              // or raspberrypi.local (Windows usually prefers just hostname)
+const SMB_SHARE = "CopyYourFilesHere";       // your SMB share name
+const UNIX_PREFIX = "/srv/mergerfs/MergedDrives/CopyYourFilesHere/"; // adjust if different
+
+function toUncPath(unixPath) {
+  // strip prefix
+  let rel = unixPath.startsWith(UNIX_PREFIX) ? unixPath.slice(UNIX_PREFIX.length) : unixPath;
+  rel = rel.replaceAll("/", "\\");
+  return `\\\\${SMB_HOST}\\${SMB_SHARE}\\${rel}`;
+}
+
 function qs(id){ return document.getElementById(id); }
 
 async function fetchJson(url) {
@@ -22,7 +55,38 @@ async function fetchJson(url) {
   return await r.json();
 }
 
-function fillDatalist(datalistEl, values) {
+function fillDatalist(datalistEl, values) {// add near your routes
+  import fs from "fs";
+  import path from "path";
+
+  app.get("/media", (req, res) => {
+    const p = req.query.path;
+    if (!p || typeof p !== "string") return res.status(400).send("missing path");
+
+    // SAFETY: only allow files under your mergerfs root
+    const ROOT = "/srv/mergerfs/MergedDrives";
+    const real = path.resolve(p);
+    if (!real.startsWith(ROOT + path.sep)) return res.status(403).send("forbidden");
+
+    // stream
+    const stat = fs.statSync(real);
+    res.setHeader("Content-Length", stat.size);
+
+    // basic content type (good enough for browser preview)
+    const ext = path.extname(real).toLowerCase();
+    const ct =
+        ext === ".jpg" || ext === ".jpeg" ? "image/jpeg" :
+            ext === ".png" ? "image/png" :
+                ext === ".webp" ? "image/webp" :
+                    ext === ".gif" ? "image/gif" :
+                        ext === ".mp4" ? "video/mp4" :
+                            ext === ".mov" ? "video/quicktime" :
+                                ext === ".m4v" ? "video/x-m4v" :
+                                    "application/octet-stream";
+
+    res.setHeader("Content-Type", ct);
+    fs.createReadStream(real).pipe(res);
+  });
   datalistEl.innerHTML = "";
   for (const v of values) {
     const opt = document.createElement("option");

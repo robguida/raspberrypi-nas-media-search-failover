@@ -14,33 +14,28 @@ let libraryCitiesByCountry = new Map();
 let selectedCountry = null;
 let selectedCity = null;
 
-const p = row.path;       // unix path from API
-const ext = row.ext?.toLowerCase();
-
 const SMB_HOST = "raspberrypi";              // or raspberrypi.local (Windows usually prefers just hostname)
 const SMB_SHARE = "CopyYourFilesHere";       // your SMB share name
 const UNIX_PREFIX = "/srv/mergerfs/MergedDrives/CopyYourFilesHere/"; // adjust if different
 
+function encodePath(p) {
+  // keep slashes unescaped so nginx sees /srv/mergerfs/... not %2F...
+  return encodeURIComponent(p).replaceAll("%2F", "/");
+}
+
 function mediaUrl(path) {
-  return `/preview?path=${encodeURIComponent(path)}`;
+  return `/preview?path=${encodePath(path)}`;
 }
 
 function isImage(ext) {
-  return ["jpg","jpeg","png","webp","gif"].includes(ext);
+  return ["jpg", "jpeg", "png", "webp", "gif"].includes(ext);
 }
 
 function isVideo(ext) {
-  return ["mp4","mov","m4v"].includes(ext);
+  return ["mp4", "mov", "m4v"].includes(ext);
 }
 
-function toUncPath(unixPath) {
-  // strip prefix
-  let rel = unixPath.startsWith(UNIX_PREFIX) ? unixPath.slice(UNIX_PREFIX.length) : unixPath;
-  rel = rel.replaceAll("/", "\\");
-  return `\\\\${SMB_HOST}\\${SMB_SHARE}\\${rel}`;
-}
-
-function qs(id){ return document.getElementById(id); }
+function qs(id) { return document.getElementById(id); }
 
 async function fetchJson(url) {
   const r = await fetch(url);
@@ -48,38 +43,7 @@ async function fetchJson(url) {
   return await r.json();
 }
 
-function fillDatalist(datalistEl, values) {// add near your routes
-  import fs from "fs";
-  import path from "path";
-
-  app.get("/preview", (req, res) => {
-    const p = req.query.path;
-    if (!p || typeof p !== "string") return res.status(400).send("missing path");
-
-    // SAFETY: only allow files under your mergerfs root
-    const ROOT = "/srv/mergerfs/MergedDrives";
-    const real = path.resolve(p);
-    if (!real.startsWith(ROOT + path.sep)) return res.status(403).send("forbidden");
-
-    // stream
-    const stat = fs.statSync(real);
-    res.setHeader("Content-Length", stat.size);
-
-    // basic content type (good enough for browser preview)
-    const ext = path.extname(real).toLowerCase();
-    const ct =
-        ext === ".jpg" || ext === ".jpeg" ? "image/jpeg" :
-            ext === ".png" ? "image/png" :
-                ext === ".webp" ? "image/webp" :
-                    ext === ".gif" ? "image/gif" :
-                        ext === ".mp4" ? "video/mp4" :
-                            ext === ".mov" ? "video/quicktime" :
-                                ext === ".m4v" ? "video/x-m4v" :
-                                    "application/octet-stream";
-
-    res.setHeader("Content-Type", ct);
-    fs.createReadStream(real).pipe(res);
-  });
+function fillDatalist(datalistEl, values) {
   datalistEl.innerHTML = "";
   for (const v of values) {
     const opt = document.createElement("option");
@@ -97,10 +61,6 @@ function setCityDatalistForCountry(country) {
 
 function asISODateStart(d) { return d ? `${d}T00:00:00` : ""; }
 function asISODateEnd(d)   { return d ? `${d}T23:59:59` : ""; }
-function encodePath(p) {
-  // keep slashes unescaped so nginx sees /srv/mergerfs/... not %2F...
-  return encodeURIComponent(p).replaceAll("%2F", "/");
-}
 
 function buildSearchUrl(page) {
   const params = new URLSearchParams();
@@ -108,7 +68,8 @@ function buildSearchUrl(page) {
   params.set("_size", String(PAGE_SIZE));
   params.set("_offset", String(page * PAGE_SIZE));
   params.set("_sort_desc", "taken_utc");
-const q = qs("q").value.trim();
+
+  const q = qs("q").value.trim();
   const country = (qs("countryInput").value || selectedCountry || "").trim();
   const city = (qs("cityInput").value || selectedCity || "").trim();
   const camera = (qs("cameraInput").value || "").trim();
@@ -192,7 +153,7 @@ function renderResults(rows) {
   qs("count").textContent = String(rows.length);
 }
 
-async function runSearch(page=0) {
+async function runSearch(page = 0) {
   currentPage = page;
   qs("pageInfo").textContent = `Page ${currentPage + 1}`;
   const url = buildSearchUrl(currentPage);
@@ -206,8 +167,8 @@ function haversineKm(lat1, lon1, lat2, lon2) {
   const toRad = (x) => x * Math.PI / 180;
   const dLat = toRad(lat2 - lat1);
   const dLon = toRad(lon2 - lon1);
-  const a = Math.sin(dLat/2)**2 +
-    Math.cos(toRad(lat1))*Math.cos(toRad(lat2))*Math.sin(dLon/2)**2;
+  const a = Math.sin(dLat / 2) ** 2 +
+      Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
   return 2 * R * Math.asin(Math.sqrt(a));
 }
 
@@ -217,7 +178,7 @@ function pointInRing(lon, lat, ring) {
     const xi = ring[i][0], yi = ring[i][1];
     const xj = ring[j][0], yj = ring[j][1];
     const intersect = ((yi > lat) !== (yj > lat)) &&
-      (lon < (xj - xi) * (lat - yi) / (yj - yi + 0.0) + xi);
+        (lon < (xj - xi) * (lat - yi) / (yj - yi + 0.0) + xi);
     if (intersect) inside = !inside;
   }
   return inside;
@@ -339,7 +300,7 @@ async function loadLibraryFacets() {
     if (!libraryCitiesByCountry.has(country)) libraryCitiesByCountry.set(country, []);
     libraryCitiesByCountry.get(country).push(city);
   }
-  for (const [k, arr] of libraryCitiesByCountry) arr.sort((a,b)=>a.localeCompare(b));
+  for (const [k, arr] of libraryCitiesByCountry) arr.sort((a, b) => a.localeCompare(b));
 
   const cams = await fetchJson(`${DB}/v_cameras.json?_shape=objects`);
   fillDatalist(qs("cameraList"), cams.rows.map(r => r.camera).filter(Boolean));

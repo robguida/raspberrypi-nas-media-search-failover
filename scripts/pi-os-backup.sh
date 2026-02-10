@@ -37,7 +37,7 @@ mkdir -p "$BACKUP_DIR"
 # Key changes vs your version:
 # - excludes the destination itself (prevents recursion)
 # - excludes OMV/mergerfs mounts by path
-rsync -aAXH --numeric-ids --delete --delete-excluded \
+rsync -aAXHv --numeric-ids --delete --delete-excluded \
   --exclude="/dev/*" \
   --exclude="/proc/*" \
   --exclude="/sys/*" \

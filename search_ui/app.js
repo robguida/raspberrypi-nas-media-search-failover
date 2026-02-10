@@ -14,7 +14,25 @@ let libraryCitiesByCountry = new Map();
 let selectedCountry = null;
 let selectedCity = null;
 
-const SMB_HOST = "raspberrypi";              // or raspberrypi.local (Windows usually prefers just hostname)
+const SMB_HOST = "raspberrypi";
+
+function formatDatePretty(isoString) {
+  if (!isoString) return "";
+  const d = new Date(isoString);
+  if (Number.isNaN(d.getTime())) return isoString;
+
+  const days = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
+  const months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+
+  const dayName = days[d.getDay()];
+  const monthName = months[d.getMonth()];
+  const day = d.getDate();
+  const year = d.getFullYear();
+  const ampm = d.getHours() < 12 ? "AM" : "PM";
+
+  return `${dayName} ${monthName} ${day}, ${year} ${ampm}`;
+}
+              // or raspberrypi.local (Windows usually prefers just hostname)
 const SMB_SHARE = "CopyYourFilesHere";       // your SMB share name
 const UNIX_PREFIX = "/srv/mergerfs/MergedDrives/CopyYourFilesHere/"; // adjust if different
 
@@ -135,7 +153,7 @@ function renderResults(rows) {
         ${title}
         <div class="muted">${[r.country, r.city].filter(Boolean).join(" · ")}</div>
         <div class="muted">${r.camera || ""}</div>
-        <div class="muted">${r.taken_utc || ""}</div>
+        <div class="muted">${formatDatePretty(r.taken_utc || r.created_utc || "")}</div>
         <div class="muted hideme"><code>${r.path}</code></div>
         <div class="resultActions hideme">
           ${smbLine}

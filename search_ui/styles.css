@@ -12,7 +12,27 @@ h2 { margin: 0 0 10px 0; font-size: 16px; }
 label { display: block; font-size: 12px; margin-top: 10px; }
 input, select { width: 100%; margin-top: 6px; padding: 10px; border-radius: 10px; border: 1px solid #d9dce2; background: #fff; font-size: 13px; }
 
-.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.grid2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+
+/* Prevent grid items from overflowing and causing overlap */
+*, *::before, *::after { box-sizing: border-box; }
+
+.grid2 > * { min-width: 0; }
+.grid2 label { margin-top: 0; min-width: 0; }
+.grid2 input, .grid2 select, .grid2 textarea { width: 100%; }
+
+/* Consistent form control styling */
+input, textarea {
+  width: 100%;
+  margin-top: 6px;
+  padding: 10px;
+  border-radius: 10px;
+  border: 1px solid #d9dce2;
+  background: #fff;
+  font-size: 13px;
+}
+
+
 .actions { display: flex; gap: 10px; margin-top: 12px; }
 button { border: 0; border-radius: 10px; padding: 10px 12px; cursor: pointer; background: #2563eb; color: #fff; font-weight: 600; }
 button.secondary { background: #e5e7eb; color: #111; }

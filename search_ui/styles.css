@@ -85,3 +85,19 @@ button.mini { padding: 6px 10px; border-radius: 10px; }
 .hideme {
 display: none;
 }
+
+
+/* Right-align Search / Reset buttons in filter section */
+#filters {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 12px;
+  align-items: end;
+}
+
+.filter-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  align-items: center;
+}

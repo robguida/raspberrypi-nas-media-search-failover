@@ -1,42 +1,45 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# OMV mounted thumb drive (from your df -h)
 BACKUP_MOUNT="/srv/dev-disk-by-uuid-f8935f5d-dd4b-4c8d-9a9b-ef523e3ae613"
 BACKUP_DIR="$BACKUP_MOUNT/pi-os-backup"
 LOGFILE="/var/log/pi-os-backup.log"
 
-echo "===== $(date -Is) Backup started =====" >> "$LOGFILE"
+# ---------- logging helpers ----------
+log() {
+  echo "$(date -Is) | $*" >> "$LOGFILE"
+}
 
-# Safety check 1: ensure mountpoint exists and is mounted
-if [[ ! -d "$BACKUP_MOUNT" ]]; then
-  echo "ERROR: Backup mount path does not exist: $BACKUP_MOUNT" >> "$LOGFILE"
+fail() {
+  log "FATAL: $*"
   exit 1
-fi
+}
 
-if ! mountpoint -q "$BACKUP_MOUNT"; then
-  echo "ERROR: Backup drive not mounted at $BACKUP_MOUNT. Aborting." >> "$LOGFILE"
-  exit 1
-fi
+trap 'fail "Script terminated unexpectedly on line $LINENO"' ERR
 
-# Safety check 2: refuse to run if BACKUP_MOUNT is root (paranoia)
-if [[ "$BACKUP_MOUNT" == "/" ]]; then
-  echo "ERROR: BACKUP_MOUNT resolved to /. Aborting." >> "$LOGFILE"
-  exit 1
-fi
+log "===== Backup START ====="
+log "Backup mount: $BACKUP_MOUNT"
+log "Backup dir:   $BACKUP_DIR"
 
+# ---------- safety checks ----------
+log "Checking if backup mount path exists"
+[[ -d "$BACKUP_MOUNT" ]] || fail "Backup mount path does not exist"
+
+log "Checking if backup mount is mounted"
+mountpoint -q "$BACKUP_MOUNT" || fail "Backup drive not mounted"
+
+log "Checking BACKUP_MOUNT is not root"
+[[ "$BACKUP_MOUNT" != "/" ]] || fail "BACKUP_MOUNT resolved to /"
+
+# ---------- prepare destination ----------
+log "Ensuring backup directory exists"
 mkdir -p "$BACKUP_DIR"
+log "Backup directory ready"
 
-# Optional: keep one “current” snapshot and also dated snapshots
-# Uncomment if you want dated snapshots:
-# SNAPSHOT_DIR="$BACKUP_MOUNT/pi-os-backup-$(date +%F)"
-# mkdir -p "$SNAPSHOT_DIR"
-# BACKUP_DIR="$SNAPSHOT_DIR"
+# ---------- rsync ----------
+log "Starting rsync filesystem backup"
+log "Excluding system pseudo-filesystems and resource mounts"
 
-# rsync root filesystem to USB, preserving ACLs/xattrs
-# Key changes vs your version:
-# - excludes the destination itself (prevents recursion)
-# - excludes OMV/mergerfs mounts by path
 rsync -aAXHv --numeric-ids --delete --delete-excluded \
   --exclude="/dev/*" \
   --exclude="/proc/*" \
@@ -51,6 +54,11 @@ rsync -aAXHv --numeric-ids --delete --delete-excluded \
   --exclude="$BACKUP_DIR/**" \
   / "$BACKUP_DIR" >> "$LOGFILE" 2>&1
 
-sync
+log "rsync completed successfully"
 
-echo "===== $(date -Is) Backup finished =====" >> "$LOGFILE"
+# ---------- flush to disk ----------
+log "Flushing filesystem buffers (sync)"
+sync
+log "sync completed"
+
+log "===== Backup FINISHED ====="

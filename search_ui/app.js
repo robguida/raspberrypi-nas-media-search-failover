@@ -137,7 +137,7 @@ function renderResults(rows) {
         <div class="muted">${r.camera || ""}</div>
         <div class="muted">${r.taken_utc || ""}</div>
         <div class="muted hideme"><code>${r.path}</code></div>
-        <div class="resultActions">
+        <div class="resultActions hideme">
           ${smbLine}
           <button class="mini secondary" data-copy="${r.path}">Copy path</button>
         </div>

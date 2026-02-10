@@ -55,6 +55,79 @@ function isVideo(ext) {
 
 function qs(id) { return document.getElementById(id); }
 
+
+// ---- Cookie helpers (persist filters) ----
+const FILTER_COOKIE_NAME = "nas_media_filters_v1";
+
+function setCookie(name, value, maxAgeSeconds = 31536000) { // default 365 days
+  document.cookie = `${name}=${encodeURIComponent(value)}; Max-Age=${maxAgeSeconds}; Path=/; SameSite=Lax`;
+}
+
+function getCookie(name) {
+  const prefix = `${name}=`;
+  for (const part of document.cookie.split(";")) {
+    const c = part.trim();
+    if (c.startsWith(prefix)) return decodeURIComponent(c.substring(prefix.length));
+  }
+  return null;
+}
+
+function deleteCookie(name) {
+  document.cookie = `${name}=; Max-Age=0; Path=/; SameSite=Lax`;
+}
+
+function readFiltersFromUi() {
+  return {
+    q: qs("q").value || "",
+    countryInput: qs("countryInput").value || "",
+    cityInput: qs("cityInput").value || "",
+    cameraInput: qs("cameraInput").value || "",
+    mediaType: qs("mediaType").value || "",
+    dateFrom: qs("dateFrom").value || "",
+    dateTo: qs("dateTo").value || "",
+    selectedCountry: selectedCountry || "",
+    selectedCity: selectedCity || ""
+  };
+}
+
+function writeFiltersToUi(f) {
+  qs("q").value = f.q || "";
+  qs("countryInput").value = f.countryInput || "";
+  qs("cityInput").value = f.cityInput || "";
+  qs("cameraInput").value = f.cameraInput || "";
+  qs("mediaType").value = f.mediaType || "";
+  qs("dateFrom").value = f.dateFrom || "";
+  qs("dateTo").value = f.dateTo || "";
+
+  selectedCountry = f.selectedCountry || f.countryInput || null;
+  selectedCity = f.selectedCity || f.cityInput || null;
+
+  qs("selCountry").textContent = selectedCountry ? selectedCountry : "—";
+  qs("selCity").textContent = selectedCity ? selectedCity : "—";
+
+  // Keep city datalist aligned with selected country
+  setCityDatalistForCountry((qs("countryInput").value || "").trim());
+}
+
+function saveFiltersToCookie() {
+  try {
+    setCookie(FILTER_COOKIE_NAME, JSON.stringify(readFiltersFromUi()));
+  } catch (e) {
+    console.warn("Could not save filters cookie", e);
+  }
+}
+
+function loadFiltersFromCookie() {
+  const raw = getCookie(FILTER_COOKIE_NAME);
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw);
+  } catch (e) {
+    console.warn("Bad filters cookie; clearing", e);
+    deleteCookie(FILTER_COOKIE_NAME);
+    return null;
+  }
+}
 async function fetchJson(url) {
   const r = await fetch(url);
   if (!r.ok) throw new Error(`HTTP ${r.status} for ${url}`);
@@ -259,6 +332,7 @@ async function initMap() {
     qs("cityInput").value = "";
     setCityDatalistForCountry("");
     if (marker) { map.removeLayer(marker); marker = null; }
+    saveFiltersToCookie();
     runSearch(0);
   });
 
@@ -298,6 +372,7 @@ async function initMap() {
       if (marker) { map.removeLayer(marker); marker = null; }
     }
 
+    saveFiltersToCookie();
     runSearch(0);
   });
 }
@@ -332,10 +407,19 @@ async function main() {
     setCityDatalistForCountry(qs("countryInput").value.trim());
   });
 
+  // Persist filters to cookie whenever user changes them
+  ["q","countryInput","cityInput","cameraInput","mediaType","dateFrom","dateTo"].forEach(id => {
+    const el = qs(id);
+    if (!el) return;
+    const evt = (el.tagName === "SELECT") ? "change" : "input";
+    el.addEventListener(evt, () => saveFiltersToCookie());
+  });
+
   qs("runSearch").addEventListener("click", () => runSearch(0));
 
   qs("reset").addEventListener("click", () => {
-    qs("q").value = "";
+    deleteCookie(FILTER_COOKIE_NAME);
+qs("q").value = "";
     qs("countryInput").value = "";
     qs("cityInput").value = "";
     qs("cameraInput").value = "";
@@ -346,12 +430,20 @@ async function main() {
     selectedCity = null;
     qs("selCountry").textContent = "—";
     qs("selCity").textContent = "—";
+    saveFiltersToCookie();
     runSearch(0);
   });
 
   qs("prev").addEventListener("click", () => { if (currentPage > 0) runSearch(currentPage - 1); });
   qs("next").addEventListener("click", () => runSearch(currentPage + 1));
 
+  // Load saved filters from cookie (if present) and apply to UI before first search
+  const saved = loadFiltersFromCookie();
+  if (saved) {
+    writeFiltersToUi(saved);
+  }
+
+  saveFiltersToCookie(); // ensure cookie exists with current values
   runSearch(0);
 }
 

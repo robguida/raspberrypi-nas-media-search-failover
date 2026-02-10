@@ -212,12 +212,19 @@ function renderResults(rows) {
 
     let media = "";
     if (isImage(r.ext)) {
-      media = `<img class="preview" loading="lazy" src="${mediaUrl(r.path)}" alt="">`;
+      media = `
+        <div class="previewBox" data-kind="img" data-src="${mediaUrl(r.path)}" title="Hover to load preview">
+          <div class="previewPlaceholder">IMG</div>
+        </div>
+      `;
     } else if (isVideo(r.ext)) {
-      media = `<video class="preview" controls preload="metadata" src="${mediaUrl(r.path)}"></video>`;
+      media = `
+        <div class="previewBox" data-kind="video" data-src="${mediaUrl(r.path)}" title="Hover to load preview">
+          <div class="previewPlaceholder">VID</div>
+        </div>
+      `;
     }
-
-    const title = `<a class="resultTitle" href="${downloadUrl}" title="Download">${r.filename}</a>`;
+const title = `<a class="resultTitle" href="${downloadUrl}" title="Download">${r.filename}</a>`;
     const smbLine = smb ? `<a class="muted" href="${smb}">Open via SMB</a>` : `<span class="muted">SMB link not derivable</span>`;
 
     card.innerHTML = `
@@ -241,7 +248,62 @@ function renderResults(rows) {
     btn.addEventListener("click", () => copyToClipboard(btn.getAttribute("data-copy")));
   });
 
-  qs("count").textContent = String(rows.length);
+
+  initLazyPreviews(container);
+qs("count").textContent = String(rows.length);
+}
+
+
+function initLazyPreviews(container) {
+  // Hover-to-load previews. We avoid auto-loading huge media.
+  container.querySelectorAll(".previewBox[data-src]").forEach(box => {
+    const src = box.getAttribute("data-src");
+    const kind = box.getAttribute("data-kind");
+    if (!src || !kind) return;
+
+    let started = false;
+
+    const startLoad = () => {
+      if (started) return;
+      started = true;
+      box.classList.add("loading");
+
+      // Replace placeholder with spinner
+      const ph = box.querySelector(".previewPlaceholder");
+      if (ph) ph.textContent = "";
+
+      if (kind === "img") {
+        const img = document.createElement("img");
+        img.className = "previewMedia";
+        img.alt = "";
+        img.onload = () => box.classList.remove("loading");
+        img.onerror = () => {
+          box.classList.remove("loading");
+          box.classList.add("error");
+          if (ph) ph.textContent = "ERR";
+        };
+        img.src = src;
+        box.appendChild(img);
+      } else if (kind === "video") {
+        const vid = document.createElement("video");
+        vid.className = "previewMedia";
+        vid.preload = "metadata";
+        vid.muted = true;
+        vid.playsInline = true;
+        vid.onloadeddata = () => box.classList.remove("loading");
+        vid.onerror = () => {
+          box.classList.remove("loading");
+          box.classList.add("error");
+          if (ph) ph.textContent = "ERR";
+        };
+        vid.src = src;
+        box.appendChild(vid);
+      }
+    };
+
+    box.addEventListener("mouseenter", startLoad, { passive: true });
+    box.addEventListener("focus", startLoad, { passive: true });
+  });
 }
 
 async function runSearch(page = 0) {

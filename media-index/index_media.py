@@ -1,226 +1,292 @@
 #!/usr/bin/env python3
-import json
+
 import os
+import json
 import sqlite3
 import subprocess
-import sys
-from datetime import datetime
 from pathlib import Path
-
+from datetime import datetime
 import reverse_geocoder as rg
-import pycountry
 
-# ---- CONFIG ----
-MEDIA_ROOT = Path("/srv/mergerfs/MergedDrives")  # CHANGE THIS
-DB_PATH = Path("/srv/dev-disk-by-uuid-c8f195fd-35e1-449f-90cb-0633bf99bde2/appdata/media-index/media_index.sqlite")  # CHANGE THIS
+# ==============================
+# CONFIG
+# ==============================
+MEDIA_ROOT = Path("/srv/mergerfs/MergedDrives")
+DB_PATH = Path("/srv/dev-disk-by-uuid-c8f195fd-35e1-449f-90cb-0633bf99bde2/appdata/media-index/media_index.sqlite")
 BATCH_SIZE = 2000
 
-MEDIA_EXTS = {
-    ".jpg", ".jpeg", ".png", ".heic", ".tif", ".tiff", ".webp",
-    ".mp4", ".mov", ".m4v", ".avi", ".mkv", ".3gp"
-}
+ALLOWED_EXTS = {"jpg", "jpeg", "png", "heic", "mp4", "mov"}
 
-# ---- DB SETUP ----
-SCHEMA_SQL = """
-PRAGMA journal_mode=WAL;
-PRAGMA synchronous=NORMAL;
+# ==============================
+# DB INIT
+# ==============================
+def init_db(conn: sqlite3.Connection) -> None:
+    conn.execute("PRAGMA journal_mode=WAL;")
+    conn.execute("PRAGMA synchronous=NORMAL;")
 
-CREATE TABLE IF NOT EXISTS files (
-  path TEXT PRIMARY KEY,
-  filename TEXT NOT NULL,
-  ext TEXT,
-  size_bytes INTEGER,
-  mtime INTEGER,
-  created_utc TEXT,
-  taken_utc TEXT,
-  lat REAL,
-  lon REAL,
-  country_code TEXT,
-  country_name TEXT,
-  camera_make TEXT,
-  camera_model TEXT
-);
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS media (
+            path TEXT PRIMARY KEY,
+            filename TEXT,
+            ext TEXT,
+            size_bytes INTEGER,
+            mtime INTEGER,
 
--- Full-text index for filename and path
-CREATE VIRTUAL TABLE IF NOT EXISTS files_fts USING fts5(
-  path,
-  filename,
-  content='files',
-  content_rowid='rowid'
-);
+            created_utc TEXT,
+            taken_utc TEXT,
+            year INTEGER,
 
--- Keep FTS in sync
-CREATE TRIGGER IF NOT EXISTS files_ai AFTER INSERT ON files BEGIN
-  INSERT INTO files_fts(rowid, path, filename) VALUES (new.rowid, new.path, new.filename);
-END;
+            lat REAL,
+            lon REAL,
 
-CREATE TRIGGER IF NOT EXISTS files_ad AFTER DELETE ON files BEGIN
-  INSERT INTO files_fts(files_fts, rowid, path, filename) VALUES ('delete', old.rowid, old.path, old.filename);
-END;
+            country_code TEXT,
+            country_name TEXT,
+            city TEXT,
+            admin1 TEXT,
+            admin2 TEXT
+        );
+        """
+    )
 
-CREATE TRIGGER IF NOT EXISTS files_au AFTER UPDATE ON files BEGIN
-  INSERT INTO files_fts(files_fts, rowid, path, filename) VALUES ('delete', old.rowid, old.path, old.filename);
-  INSERT INTO files_fts(rowid, path, filename) VALUES (new.rowid, new.path, new.filename);
-END;
-"""
+    conn.execute(
+        """
+        CREATE VIRTUAL TABLE IF NOT EXISTS media_fts USING fts5(
+            path, filename, country_name, city
+        );
+        """
+    )
 
-UPSERT_SQL = """
-INSERT INTO files (
-  path, filename, ext, size_bytes, mtime, created_utc, taken_utc,
-  lat, lon, country_code, country_name, camera_make, camera_model
-) VALUES (
-  :path, :filename, :ext, :size_bytes, :mtime, :created_utc, :taken_utc,
-  :lat, :lon, :country_code, :country_name, :camera_make, :camera_model
-)
-ON CONFLICT(path) DO UPDATE SET
-  filename=excluded.filename,
-  ext=excluded.ext,
-  size_bytes=excluded.size_bytes,
-  mtime=excluded.mtime,
-  created_utc=excluded.created_utc,
-  taken_utc=excluded.taken_utc,
-  lat=excluded.lat,
-  lon=excluded.lon,
-  country_code=excluded.country_code,
-  country_name=excluded.country_name,
-  camera_make=excluded.camera_make,
-  camera_model=excluded.camera_model;
-"""
+    # Indexes for performance
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_taken_utc ON media(taken_utc);")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_country_code ON media(country_code);")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_year ON media(year);")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_latlon ON media(lat, lon);")
 
-def country_name_from_code(code: str | None) -> str | None:
-    if not code:
-        return None
+    # View expected by search_ui (DO NOT change the UI)
+    conn.execute(
+        """
+        CREATE VIEW IF NOT EXISTS v_search AS
+        SELECT
+            path,
+            filename,
+            ext,
+            size_bytes,
+            mtime,
+            created_utc,
+            taken_utc,
+            country_name AS country,
+            city,
+            admin1,
+            admin2,
+            country_code,
+            lat,
+            lon,
+            year
+        FROM media;
+        """
+    )
+
+    conn.commit()
+
+# ==============================
+# FILE SCAN
+# ==============================
+def scan_files():
+    for root, _, files in os.walk(MEDIA_ROOT):
+        for name in files:
+            parts = name.rsplit(".", 1)
+            if len(parts) != 2:
+                continue
+            ext = parts[1].lower()
+            if ext not in ALLOWED_EXTS:
+                continue
+
+            full_path = Path(root) / name
+            try:
+                stat = full_path.stat()
+            except FileNotFoundError:
+                continue
+
+            yield {
+                "path": str(full_path),
+                "filename": name,
+                "ext": ext,
+                "size": stat.st_size,
+                "mtime": int(stat.st_mtime),
+            }
+
+# ==============================
+# EXIF EXTRACTION
+# ==============================
+def get_exif_batch(paths):
+    if not paths:
+        return []
+
+    cmd = [
+        "exiftool",
+        "-json",
+        "-n",  # numeric lat/lon
+        "-DateTimeOriginal",
+        "-CreateDate",
+        "-GPSLatitude",
+        "-GPSLongitude",
+    ] + paths
+
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    if result.returncode != 0 or not result.stdout.strip():
+        return []
     try:
-        c = pycountry.countries.get(alpha_2=code.upper())
-        return c.name if c else code.upper()
+        return json.loads(result.stdout)
     except Exception:
-        return code.upper()
+        return []
 
-def reverse_country(lat: float | None, lon: float | None) -> tuple[str | None, str | None]:
-    if lat is None or lon is None:
-        return (None, None)
+def parse_datetime(dt_string):
+    if not dt_string:
+        return None, None
     try:
-        res = rg.search((lat, lon), mode=1)  # single result
-        cc = res[0].get("cc")
-        return (cc, country_name_from_code(cc))
+        dt = datetime.strptime(dt_string, "%Y:%m:%d %H:%M:%S")
+        # NOTE: this is often camera-local time; search_ui expects ISO strings in "taken_utc"
+        return dt.isoformat(), dt.year
     except Exception:
-        return (None, None)
+        return None, None
 
-def exiftool_json(paths: list[str]) -> list[dict]:
-    # -n = numeric output (lat/lon as floats)
-    cmd = ["exiftool", "-json", "-n",
-           "-FileName", "-FileTypeExtension", "-FileSize#",
-           "-CreateDate", "-DateTimeOriginal",
-           "-GPSLatitude", "-GPSLongitude",
-           "-Make", "-Model"] + paths
-    p = subprocess.run(cmd, capture_output=True, text=True)
-    if p.returncode != 0:
-        # exiftool sometimes returns nonzero on some files; still may output JSON
-        if not p.stdout.strip():
-            raise RuntimeError(p.stderr.strip())
-    return json.loads(p.stdout or "[]")
+# ==============================
+# UPSERT LOGIC
+# ==============================
+def upsert_media(conn, file_info, exif_data):
+    taken_utc = None
+    year = None
 
-def iter_media_files(root: Path):
-    for dirpath, _, filenames in os.walk(root):
-        for fn in filenames:
-            p = Path(dirpath) / fn
-            if p.suffix.lower() in MEDIA_EXTS:
-                yield p
+    lat = None
+    lon = None
+    country_code = None
+    country_name = None
+    city = None
+    admin1 = None
+    admin2 = None
 
+    if exif_data:
+        dt_raw = exif_data.get("DateTimeOriginal") or exif_data.get("CreateDate")
+        taken_utc, year = parse_datetime(dt_raw)
+
+        lat = exif_data.get("GPSLatitude")
+        lon = exif_data.get("GPSLongitude")
+
+        if lat is not None and lon is not None:
+            try:
+                geo = rg.search((lat, lon))[0]
+                country_code = geo.get("cc")
+                city = geo.get("name")
+                admin1 = geo.get("admin1")
+                admin2 = geo.get("admin2")
+                # reverse_geocoder doesn't give full country name; keep CC for now
+                country_name = country_code
+            except Exception:
+                pass
+
+    # Fallback year from mtime if missing
+    if not year:
+        year = datetime.utcfromtimestamp(file_info["mtime"]).year
+
+    created_utc = datetime.utcfromtimestamp(file_info["mtime"]).isoformat()
+
+    conn.execute(
+        """
+        INSERT INTO media (
+            path, filename, ext, size_bytes, mtime,
+            created_utc, taken_utc, year,
+            lat, lon,
+            country_code, country_name,
+            city, admin1, admin2
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(path) DO UPDATE SET
+            size_bytes=excluded.size_bytes,
+            mtime=excluded.mtime,
+            created_utc=excluded.created_utc,
+            taken_utc=excluded.taken_utc,
+            year=excluded.year,
+            lat=excluded.lat,
+            lon=excluded.lon,
+            country_code=excluded.country_code,
+            country_name=excluded.country_name,
+            city=excluded.city,
+            admin1=excluded.admin1,
+            admin2=excluded.admin2;
+        """,
+        (
+            file_info["path"],
+            file_info["filename"],
+            file_info["ext"],
+            file_info["size"],
+            file_info["mtime"],
+            created_utc,
+            taken_utc,
+            year,
+            lat,
+            lon,
+            country_code,
+            country_name,
+            city,
+            admin1,
+            admin2,
+        ),
+    )
+
+    conn.execute(
+        """
+        INSERT OR REPLACE INTO media_fts(rowid, path, filename, country_name, city)
+        VALUES (
+            (SELECT rowid FROM media WHERE path=?),
+            ?, ?, ?, ?
+        );
+        """,
+        (
+            file_info["path"],
+            file_info["path"],
+            file_info["filename"],
+            country_name,
+            city,
+        ),
+    )
+
+# ==============================
+# BATCH PROCESS
+# ==============================
+def process_batch(conn, batch):
+    paths = [f["path"] for f in batch]
+    exif_results = get_exif_batch(paths)
+    exif_map = {item.get("SourceFile"): item for item in exif_results if item.get("SourceFile")}
+
+    for file_info in batch:
+        exif_data = exif_map.get(file_info["path"])
+        upsert_media(conn, file_info, exif_data)
+
+    conn.commit()
+
+# ==============================
+# MAIN
+# ==============================
 def main():
-    if not MEDIA_ROOT.exists():
-        print(f"MEDIA_ROOT does not exist: {MEDIA_ROOT}", file=sys.stderr)
-        sys.exit(2)
+    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
 
     conn = sqlite3.connect(DB_PATH)
-    conn.execute("PRAGMA foreign_keys=ON;")
-    conn.executescript(SCHEMA_SQL)
+    init_db(conn)
 
-    cur = conn.cursor()
-
-    # Build a set of existing rows with (size, mtime) to support incremental updates
-    cur.execute("SELECT path, size_bytes, mtime FROM files")
-    existing = {row[0]: (row[1], row[2]) for row in cur.fetchall()}
-
+    print(f"Scanning files under: {MEDIA_ROOT}")
     batch = []
-    to_process = []
+    for file_info in scan_files():
+        batch.append(file_info)
+        if len(batch) >= BATCH_SIZE:
+            process_batch(conn, batch)
+            batch = []
 
-    for p in iter_media_files(MEDIA_ROOT):
-        st = p.stat()
-        sp = str(p)
-        sig = (st.st_size, int(st.st_mtime))
-        if existing.get(sp) == sig:
-            continue
-        to_process.append(sp)
-        if len(to_process) >= BATCH_SIZE:
-            batch.append(to_process)
-            to_process = []
-
-    if to_process:
-        batch.append(to_process)
-
-    total = sum(len(b) for b in batch)
-    print(f"Files to index/update: {total}")
-
-    indexed = 0
-    for group in batch:
-        meta = exiftool_json(group)
-        rows = []
-        for m in meta:
-            path = m.get("SourceFile")
-            if not path:
-                continue
-            p = Path(path)
-            st = p.stat()
-
-            lat = m.get("GPSLatitude")
-            lon = m.get("GPSLongitude")
-            cc, cn = reverse_country(lat, lon)
-
-            # Use EXIF taken date if available; otherwise CreateDate; otherwise None
-            taken = m.get("DateTimeOriginal") or m.get("CreateDate")
-            # Normalize: keep as ISO-ish string when possible
-            taken_utc = None
-            if taken:
-                # ExifTool returns "YYYY:MM:DD HH:MM:SS" typically
-                try:
-                    dt = datetime.strptime(taken, "%Y:%m:%d %H:%M:%S")
-                    taken_utc = dt.isoformat()
-                except Exception:
-                    taken_utc = str(taken)
-
-            rows.append({
-                "path": path,
-                "filename": p.name,
-                "ext": (m.get("FileTypeExtension") or p.suffix.lstrip(".")).lower() if (m.get("FileTypeExtension") or p.suffix) else None,
-                "size_bytes": int(m.get("FileSize#") or st.st_size),
-                "mtime": int(st.st_mtime),
-                "created_utc": datetime.utcfromtimestamp(st.st_mtime).isoformat(),
-                "taken_utc": taken_utc,
-                "lat": lat,
-                "lon": lon,
-                "country_code": cc,
-                "country_name": cn,
-                "camera_make": m.get("Make"),
-                "camera_model": m.get("Model"),
-            })
-
-        conn.executemany(UPSERT_SQL, rows)
-        conn.commit()
-        indexed += len(rows)
-        print(f"Indexed: {indexed}/{total}")
-
-    # Optional: remove rows for files that no longer exist
-    cur.execute("SELECT path FROM files")
-    all_paths = [r[0] for r in cur.fetchall()]
-    missing = [p for p in all_paths if not os.path.exists(p)]
-    if missing:
-        print(f"Removing missing files from index: {len(missing)}")
-        conn.executemany("DELETE FROM files WHERE path=?", [(p,) for p in missing])
-        conn.commit()
+    if batch:
+        process_batch(conn, batch)
 
     conn.close()
-    print("Done.")
+    print("Indexing complete.")
 
 if __name__ == "__main__":
     main()
